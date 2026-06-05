@@ -8,6 +8,7 @@ debug_ocr_*.png
 # Node / Vite
 node_modules/
 dist/
+*.tsbuildinfo
 
 # Env / secrets
 .env
