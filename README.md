@@ -83,7 +83,12 @@ docker compose up --build
 
 Caddy terminates TLS (auto Let's Encrypt), gates the site behind basic auth, serves
 the static frontend, and reverse-proxies `/api/*` to the backend. Only ports 80/443
-are exposed; the backend and frontend containers are internal.
+are exposed; the backend and frontend containers are internal. Caddy also sets
+security headers (HSTS, CSP, `nosniff`, frame denial), caps `/api` upload bodies at
+1 MB, and writes JSON access logs to stdout (`docker compose logs caddy`).
+
+> The CSP pins the one inline `<script>` in `frontend/index.html` by SHA-256 hash.
+> If you change that snippet, regenerate the hash and update it in the `Caddyfile`.
 
 ## API
 
@@ -107,17 +112,19 @@ and caps how much work is in flight at once:
 | status | when                                                           |
 | ------ | -------------------------------------------------------------- |
 | `200`  | success                                                        |
-| `413`  | upload larger than the size cap                                |
+| `413`  | upload larger than 1 MB (also rejected at the edge by Caddy)   |
 | `422`  | bad date, undecodable image, wrong resolution, or no dots      |
 | `500`  | unexpected error (details are logged server-side, not returned)|
 | `503`  | server busy — too many extractions in flight (`Retry-After: 60`)|
+| `504`  | a single extraction exceeded the timeout                        |
 
-Two env vars tune the throttle (defaults in parentheses):
+Env vars tune the throttle (defaults in parentheses):
 
 | var                         | meaning                                  |
 | --------------------------- | ---------------------------------------- |
 | `MAX_CONCURRENT_EXTRACTIONS`| OCR jobs running at once (`2`)            |
 | `MAX_INFLIGHT_EXTRACTIONS`  | running + queued before `503` (`6`)       |
+| `EXTRACT_TIMEOUT_SECONDS`   | per-extraction timeout before `504` (`30`)|
 
 ## License
 

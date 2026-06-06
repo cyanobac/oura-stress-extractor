@@ -5,8 +5,40 @@
 		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
 	}
 
-	# API → FastAPI backend.
+	# Access log to stdout (captured by `docker compose logs caddy`) so abuse is
+	# visible and can feed fail2ban-style banning later.
+	log {
+		output stdout
+		format json
+	}
+
+	# Security headers on every response.
+	header {
+		# HSTS: force HTTPS for a year (TLS is always on here).
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		# Don't let browsers MIME-sniff responses.
+		X-Content-Type-Options "nosniff"
+		# Don't leak the full URL to third parties.
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# No camera/mic/geolocation needed.
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		# Lock down sources. script-src pins the one inline theme snippet in
+		# index.html by hash; previews use blob:, the annotated chart uses data:;
+		# fonts come from Google Fonts. Regenerate the script hash if that inline
+		# snippet changes.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-3iy0OS2lbhFVDVYON8J51B0ehGrQf5/Vce7wK1NTjNo='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+		# Belt-and-suspenders against framing (older browsers ignore CSP's frame-ancestors).
+		X-Frame-Options "DENY"
+		# Don't advertise the server software.
+		-Server
+	}
+
+	# API → FastAPI backend. Reject oversized uploads at the edge (matches the
+	# backend's MAX_UPLOAD_BYTES) so huge bodies never reach Python.
 	handle /api/* {
+		request_body {
+			max_size 1MB
+		}
 		reverse_proxy backend:8000
 	}
 

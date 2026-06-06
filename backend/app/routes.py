@@ -22,7 +22,10 @@ logger = logging.getLogger("oura_extractor")
 router = APIRouter(prefix="/api")
 
 MASK_PATH = str(Path(__file__).parent / "extractor" / "mask_scaled.png")
-MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB is plenty for a phone screenshot
+# A 640x1136 Oura screenshot is ~250-300 KB; 1 MB is generous headroom and keeps
+# queued uploads from adding up to much memory. Caddy enforces the same cap at
+# the edge so oversized bodies never reach Python.
+MAX_UPLOAD_BYTES = 1 * 1024 * 1024
 
 # OCR is CPU-bound and synchronous; cap how many run at once so a burst of
 # uploads can't pin every core (the public box has no auth in front of it).
@@ -36,6 +39,12 @@ _extract_semaphore = asyncio.Semaphore(_MAX_CONCURRENT)
 # check-then-increment below is atomic as long as no `await` sits between them.
 _MAX_INFLIGHT = int(os.environ.get("MAX_INFLIGHT_EXTRACTIONS", "6"))
 _inflight = 0  # running + waiting
+
+# Safety-net timeout for a single extraction. Dimension validation already bounds
+# the work, so this only fires on a pathological hang. Note: the worker thread
+# can't be force-killed, so on timeout we free the client and the slot and let
+# the orphaned thread finish on its own.
+_EXTRACT_TIMEOUT = float(os.environ.get("EXTRACT_TIMEOUT_SECONDS", "30"))
 
 
 def _run_pipeline(raw: bytes, reference_date, include_image: bool) -> dict:
@@ -83,7 +92,7 @@ async def extract(
     if not raw:
         raise HTTPException(status_code=422, detail="Empty upload")
     if len(raw) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="Image too large (max 10 MB)")
+        raise HTTPException(status_code=413, detail="Image too large (max 1 MB)")
 
     # Shed load before committing memory: if the running+waiting count is already
     # at the limit, reject fast instead of growing the queue. (Atomic in asyncio:
@@ -101,8 +110,16 @@ async def extract(
         # freeze the event loop, and gate concurrency so a flood can't exhaust CPU.
         async with _extract_semaphore:
             try:
-                return await run_in_threadpool(
-                    _run_pipeline, raw, reference_date, include_image
+                return await asyncio.wait_for(
+                    run_in_threadpool(
+                        _run_pipeline, raw, reference_date, include_image
+                    ),
+                    timeout=_EXTRACT_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Extraction timed out after %ss", _EXTRACT_TIMEOUT)
+                raise HTTPException(
+                    status_code=504, detail="Extraction timed out. Please try again."
                 )
             except ExtractionError as e:
                 # Expected, user-facing problems (bad size, undecodable, no dots).

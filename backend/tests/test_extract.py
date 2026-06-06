@@ -116,3 +116,29 @@ def test_extract_endpoint_sheds_load_when_busy(sample_png_bytes, monkeypatch):
     )
     assert r.status_code == 503
     assert r.headers["Retry-After"] == "60"
+
+
+def test_extract_endpoint_rejects_oversized():
+    # Bodies over the 1 MB cap are rejected before any decode/OCR.
+    from app import routes
+
+    blob = b"\x00" * (routes.MAX_UPLOAD_BYTES + 1)
+    r = client.post(
+        "/api/extract",
+        files={"file": ("big.png", blob, "image/png")},
+        data={"date": "2026-02-10"},
+    )
+    assert r.status_code == 413
+
+
+def test_extract_endpoint_times_out(sample_png_bytes, monkeypatch):
+    # A near-zero timeout fires before OCR finishes → 504, not a hung request.
+    from app import routes
+
+    monkeypatch.setattr(routes, "_EXTRACT_TIMEOUT", 0.0001)
+    r = client.post(
+        "/api/extract",
+        files={"file": ("chart.png", sample_png_bytes, "image/png")},
+        data={"date": "2026-02-10"},
+    )
+    assert r.status_code == 504
