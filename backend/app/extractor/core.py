@@ -50,8 +50,70 @@ class ExtractionError(ValueError):
     """Raised for recoverable, user-facing extraction problems (e.g. bad image)."""
 
 
+# Decompression-bomb guard. cv2.imdecode allocates the full bitmap before we ever
+# check dimensions, so a tiny but highly-compressed file could blow up memory. A
+# real Oura screenshot is 640x1136 (~0.73 MP); even high-res phone screenshots are
+# only a few MP, so this leaves huge headroom while blocking multi-gigabyte bombs.
+MAX_DECODE_PIXELS = 40_000_000  # ~40 MP -> ~120 MB decoded at 3 bytes/px
+
+
+def _png_dimensions(data):
+    """(width, height) from a PNG IHDR header, or None if not a PNG."""
+    if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
+        return None
+    return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+
+
+def _jpeg_dimensions(data):
+    """(width, height) from a JPEG SOF marker, or None if not a parseable JPEG."""
+    if len(data) < 4 or data[0] != 0xFF or data[1] != 0xD8:  # SOI
+        return None
+    i, n = 2, len(data)
+    while i + 1 < n:
+        if data[i] != 0xFF:
+            return None
+        marker = data[i + 1]
+        if marker == 0xFF:  # fill byte
+            i += 1
+            continue
+        # Standalone markers carry no length field.
+        if marker == 0x01 or 0xD0 <= marker <= 0xD9:
+            i += 2
+            continue
+        if i + 4 > n:
+            return None
+        seg_len = (data[i + 2] << 8) | data[i + 3]
+        # Start-of-Frame markers (excluding DHT/JPG/DAC) hold the dimensions.
+        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+            if i + 9 > n:
+                return None
+            height = (data[i + 5] << 8) | data[i + 6]
+            width = (data[i + 7] << 8) | data[i + 8]
+            return width, height
+        i += 2 + seg_len
+    return None
+
+
+def _guard_decompression_bomb(file_bytes):
+    """Reject images whose header declares an absurd pixel count, before decode.
+
+    Only PNG/JPEG headers are parsed (the formats this tool expects); unknown
+    headers fall through to cv2.imdecode + validate_dimensions, and the upload
+    size cap bounds the worst case for those.
+    """
+    dims = _png_dimensions(file_bytes) or _jpeg_dimensions(file_bytes)
+    if dims is None:
+        return
+    width, height = dims
+    if width * height > MAX_DECODE_PIXELS:
+        raise ExtractionError(
+            f"Image dimensions {width}x{height} are too large to process."
+        )
+
+
 def decode_image(file_bytes):
     """Decode uploaded bytes into a BGR image array, or raise ExtractionError."""
+    _guard_decompression_bomb(file_bytes)
     arr = np.frombuffer(file_bytes, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:

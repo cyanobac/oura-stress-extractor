@@ -37,6 +37,32 @@ def test_decode_rejects_garbage():
         decode_image(b"not an image")
 
 
+def test_decode_rejects_decompression_bomb():
+    # A PNG header declaring 60000x60000 (3.6 GP) — rejected before any decode.
+    import struct
+
+    header = (
+        b"\x89PNG\r\n\x1a\n"
+        + struct.pack(">I", 13) + b"IHDR"
+        + struct.pack(">II", 60000, 60000)
+    )
+    with pytest.raises(ExtractionError, match="too large"):
+        decode_image(header)
+
+
+def test_guard_reads_real_dimensions():
+    # The guard must parse real PNG/JPEG headers and let normal sizes through.
+    import cv2
+
+    from app.extractor.core import _jpeg_dimensions, _png_dimensions
+
+    img = np.zeros((1136, 640, 3), np.uint8)
+    ok, png = cv2.imencode(".png", img)
+    assert ok and _png_dimensions(png.tobytes()) == (640, 1136)
+    ok, jpg = cv2.imencode(".jpg", img)
+    assert ok and _jpeg_dimensions(jpg.tobytes()) == (640, 1136)
+
+
 def test_validate_dimensions_accepts_expected():
     validate_dimensions(np.zeros((1136, 640, 3), np.uint8))  # should not raise
 

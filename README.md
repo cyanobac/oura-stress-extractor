@@ -148,7 +148,7 @@ and caps how much work is in flight at once:
 | ------ | -------------------------------------------------------------- |
 | `200`  | success                                                        |
 | `413`  | upload larger than 1 MB (also rejected at the edge by Caddy)   |
-| `422`  | bad date, undecodable image, wrong resolution, or no dots      |
+| `422`  | bad date, undecodable image, wrong/oversized resolution, no dots|
 | `429`  | per-IP daily limit reached (`Retry-After` set)                  |
 | `500`  | unexpected error (details are logged server-side, not returned)|
 | `503`  | server busy — too many extractions in flight (`Retry-After: 60`)|
