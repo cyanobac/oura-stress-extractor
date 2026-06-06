@@ -90,6 +90,41 @@ security headers (HSTS, CSP, `nosniff`, frame denial), caps `/api` upload bodies
 > The CSP pins the one inline `<script>` in `frontend/index.html` by SHA-256 hash.
 > If you change that snippet, regenerate the hash and update it in the `Caddyfile`.
 
+## Public deployment behind Cloudflare
+
+For a public, unauthenticated deployment, put Cloudflare in front for free DDoS
+absorption and to hide the origin IP. The per-IP daily limit (above) and the
+in-flight concurrency cap protect CPU/RAM; Cloudflare handles the volumetric
+layer.
+
+1. **Add the domain to Cloudflare** and switch your registrar to Cloudflare's
+   nameservers.
+2. **Proxy the DNS record** — an `A` record for `DOMAIN` → your server IP with
+   the **orange cloud** (proxied) on.
+3. **TLS.** Caddy's automatic Let's Encrypt challenge can fail while traffic is
+   proxied, so either:
+   - *Recommended:* create a **Cloudflare Origin Certificate** (Cloudflare
+     dashboard → SSL/TLS → Origin Server), set SSL/TLS mode to **Full
+     (strict)**, mount the cert/key into the Caddy container, and tell Caddy to
+     use them in the site block:
+     ```
+     tls /etc/caddy/origin.pem /etc/caddy/origin-key.pem
+     ```
+     (add a `./origin.pem:/etc/caddy/origin.pem:ro` style mount in
+     `docker-compose.yml`). The cert is valid for years, so there's no renewal.
+   - *Quick alternative:* leave the record **grey-clouded** until Caddy obtains a
+     Let's Encrypt cert, then flip it to orange. Note that proxied renewals can
+     later fail — the Origin Certificate avoids that.
+4. **Lock the origin to Cloudflare.** Restrict your Hetzner firewall so ports
+   80/443 only accept Cloudflare's IP ranges
+   (<https://www.cloudflare.com/ips/>); otherwise bots can hit the origin IP
+   directly and bypass Cloudflare. Those same ranges are listed as
+   `trusted_proxies` in the `Caddyfile` so `{client_ip}` (and the access logs and
+   per-IP limit) reflect the real visitor, not the Cloudflare edge.
+5. *(Optional)* Add a Cloudflare rate-limiting rule for short-burst protection;
+   the 24 h per-IP quota stays in the app since the free tier can't do long
+   windows.
+
 ## API
 
 `POST /api/extract` (multipart form)
@@ -114,17 +149,25 @@ and caps how much work is in flight at once:
 | `200`  | success                                                        |
 | `413`  | upload larger than 1 MB (also rejected at the edge by Caddy)   |
 | `422`  | bad date, undecodable image, wrong resolution, or no dots      |
+| `429`  | per-IP daily limit reached (`Retry-After` set)                  |
 | `500`  | unexpected error (details are logged server-side, not returned)|
 | `503`  | server busy — too many extractions in flight (`Retry-After: 60`)|
 | `504`  | a single extraction exceeded the timeout                        |
 
 Env vars tune the throttle (defaults in parentheses):
 
-| var                         | meaning                                  |
-| --------------------------- | ---------------------------------------- |
-| `MAX_CONCURRENT_EXTRACTIONS`| OCR jobs running at once (`2`)            |
-| `MAX_INFLIGHT_EXTRACTIONS`  | running + queued before `503` (`6`)       |
-| `EXTRACT_TIMEOUT_SECONDS`   | per-extraction timeout before `504` (`30`)|
+| var                         | meaning                                          |
+| --------------------------- | ------------------------------------------------ |
+| `MAX_CONCURRENT_EXTRACTIONS`| OCR jobs running at once (`2`)                    |
+| `MAX_INFLIGHT_EXTRACTIONS`  | running + queued before `503` (`6`)               |
+| `EXTRACT_TIMEOUT_SECONDS`   | per-extraction timeout before `504` (`30`)        |
+| `RATE_LIMIT_MAX`            | successful extractions per IP per window; `0` off (`10`)|
+| `RATE_LIMIT_WINDOW_HOURS`   | rolling window for the per-IP limit (`24`)        |
+| `RATE_LIMIT_DB`             | SQLite path for the counter (`/data/ratelimit.db` in Docker)|
+
+Only **successful** (200) extractions count against `RATE_LIMIT_MAX`; the count
+is keyed on the client IP (from the `X-Real-IP` header Caddy sets) and persists
+in SQLite, so it survives restarts and redeploys.
 
 ## License
 

@@ -142,3 +142,21 @@ def test_extract_endpoint_times_out(sample_png_bytes, monkeypatch):
         data={"date": "2026-02-10"},
     )
     assert r.status_code == 504
+
+
+def test_extract_endpoint_enforces_daily_limit(sample_png_bytes):
+    # Pre-seed the quota for the TestClient's IP so the limit is hit before any
+    # OCR runs, then assert the next request is rejected with 429 + Retry-After.
+    from app import ratelimit
+
+    for _ in range(ratelimit.max_hits()):
+        ratelimit.record("testclient")
+
+    r = client.post(
+        "/api/extract",
+        files={"file": ("chart.png", sample_png_bytes, "image/png")},
+        data={"date": "2026-02-10"},
+    )
+    assert r.status_code == 429
+    assert int(r.headers["Retry-After"]) > 0
+    assert "github.com/cyanobac/oura-stress-extractor" in r.json()["detail"]

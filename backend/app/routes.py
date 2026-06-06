@@ -7,9 +7,10 @@ from datetime import datetime
 from pathlib import Path
 
 import cv2
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 
+from . import ratelimit
 from .extractor.core import (
     ExtractionError,
     decode_image,
@@ -72,6 +73,7 @@ def health():
 
 @router.post("/extract")
 async def extract(
+    request: Request,
     file: UploadFile = File(...),
     date: str = Form(...),
     include_image: bool = Form(False),
@@ -94,6 +96,26 @@ async def extract(
     if len(raw) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="Image too large (max 1 MB)")
 
+    # Per-IP daily quota. Caddy is the only thing that reaches the backend, and it
+    # sets X-Real-IP from the verified client IP, so we trust that header here.
+    ip = request.headers.get("X-Real-IP") or (
+        request.client.host if request.client else "unknown"
+    )
+    if ratelimit.enabled():
+        used = await run_in_threadpool(ratelimit.count_recent, ip)
+        if used >= ratelimit.max_hits():
+            retry = await run_in_threadpool(ratelimit.seconds_until_reset, ip)
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    f"Daily limit of {ratelimit.max_hits()} extractions reached "
+                    f"for your IP. Run it locally instead — "
+                    f"https://github.com/cyanobac/oura-stress-extractor — or try "
+                    f"again tomorrow."
+                ),
+                headers={"Retry-After": str(retry)},
+            )
+
     # Shed load before committing memory: if the running+waiting count is already
     # at the limit, reject fast instead of growing the queue. (Atomic in asyncio:
     # no `await` between the check and the increment.)
@@ -110,7 +132,7 @@ async def extract(
         # freeze the event loop, and gate concurrency so a flood can't exhaust CPU.
         async with _extract_semaphore:
             try:
-                return await asyncio.wait_for(
+                result = await asyncio.wait_for(
                     run_in_threadpool(
                         _run_pipeline, raw, reference_date, include_image
                     ),
@@ -130,5 +152,10 @@ async def extract(
                 raise HTTPException(
                     status_code=500, detail="Extraction failed. Please try again."
                 )
+
+        # Only successful extractions count against the daily quota.
+        if ratelimit.enabled():
+            await run_in_threadpool(ratelimit.record, ip)
+        return result
     finally:
         _inflight -= 1

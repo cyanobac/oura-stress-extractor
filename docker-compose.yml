@@ -5,6 +5,11 @@ services:
     expose:
       - "8000"
     # No published ports: only Caddy talks to it.
+    environment:
+      # Persist the per-IP rate-limit counter so the daily limit survives restarts.
+      RATE_LIMIT_DB: /data/ratelimit.db
+    volumes:
+      - ratelimit_data:/data
 
   frontend:
     build: ./frontend
@@ -34,3 +39,4 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+  ratelimit_data:

@@ -14,6 +14,13 @@ FIXTURES = Path(__file__).parent / "fixtures"
 SAMPLE_DATE = "2026-02-10"
 
 
+@pytest.fixture(autouse=True)
+def isolated_ratelimit_db(tmp_path, monkeypatch):
+    """Point the rate limiter at a fresh per-test SQLite file so tests don't
+    share counter state (and don't write to the real default DB)."""
+    monkeypatch.setenv("RATE_LIMIT_DB", str(tmp_path / "ratelimit.db"))
+
+
 @pytest.fixture
 def sample_png_bytes() -> bytes:
     return (FIXTURES / f"stress_chart_{SAMPLE_DATE}.png").read_bytes()
