@@ -338,10 +338,10 @@ export function App() {
           <span className="brand-tool">Oura Stress Data Extractor</span>
           <ThemeToggle />
         </div>
-        <h1>Daytime Stress, in clean data.</h1>
+        <h1>Extract Oura Daytime Stress data from a screenshot.</h1>
         <p className="subtitle">
-          Drop an Oura &ldquo;Daytime Stress&rdquo; screenshot and pick its date &mdash; we read the
-          zones off the chart and hand you back a tidy, downloadable timeline.
+          Upload a Daytime Stress screenshot and get a clean, downloadable timeline. <br />
+          Screenshots are processed in memory and never stored.
         </p>
       </header>
 

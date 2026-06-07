@@ -1,21 +1,46 @@
 # Oura Stress Extractor
 
-A small web app that turns a screenshot of Oura's **Daytime Stress** screen into a
-table of `(time, stress zone)` rows. Oura has no public API for this data, so this
-scrapes it off the app screen with OpenCV + Tesseract OCR.
 
-Upload a screenshot, pick the date, and get a table you can copy or download as CSV.
+A small web app that turns a screenshot of Oura’s **Daytime Stress** screen into a table of `(timestamp, stress zone)` rows. Oura provides no API for this data, so the extractor reconstructs it directly from the screenshot using OpenCV and Tesseract OCR.
 
-> Extracted from the larger (not yet released) *daystar* project as a standalone, shareable repo.
-> The extraction core (`backend/app/extractor/`) is vendored from daystar's
-> `extractor/` package.
+> Extracted from the larger (unreleased) _daystar_ project as a standalone, shareable tool. The extraction core (`backend/app/extractor/`) is vendored from daystar’s `extractor/` package.
+
+
+## Try it out
+
+https://codeome.net
+
+## Screenshots
+
+### Upload & Extract
+Drop in a Daytime Stress screenshot, set the date, and click **Extract**.
+![Upload Panel](assets/screenshot-upload.png)
+
+### Original + Annotated Views
+The extractor displays the original screenshot alongside an annotated version showing detected datapoints.
+![Original and Annotated Screenshots](assets/screenshot-phones.png)
+
+### Results Table
+Every detected datapoint is reconstructed into a clean table.  
+Click **Download CSV** to save the results.
+![Extracted Datapoints](assets/screenshot-relax.png)
 
 ## Device Compatibility
 
-| Device | Resolution | Status |
-|--------|------------|--------|
-| iPhone SE (2020) | 640×1136 | Supported |
-| Others | — | Need screenshots |
+|Device|Resolution|Status|
+|---|---|---|
+|iPhone SE (2020)|640×1136|Supported|
+|Others|—|Need screenshots|
+
+## Contribute a Screenshot (Help Add Device Support)
+
+If your device isn’t supported, you can help by contributing a screenshot.
+
+1. Open an issue titled “Device screenshot: <your device>”.
+2. Attach your Daytime Stress screenshot.
+3. Include your device model and resolution if known.
+
+This helps expand support to more devices.
 
 ## How it works
 
