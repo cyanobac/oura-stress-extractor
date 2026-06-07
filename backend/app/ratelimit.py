@@ -46,11 +46,16 @@ def _connect() -> sqlite3.Connection:
 
 
 def count_recent(ip: str, window_s: int | None = None) -> int:
-    """Prune this ip's expired hits, then count what remains in the window."""
+    """Prune *all* expired hits, then count what remains in the window for this ip.
+
+    The prune is global (not just this ip) so one-off visitors' rows don't
+    accumulate forever — this runs on every admission check, keeping the table
+    bounded to roughly the hits within the current window.
+    """
     window_s = window_seconds() if window_s is None else window_s
     cutoff = time.time() - window_s
     with _connect() as conn:
-        conn.execute("DELETE FROM hits WHERE ip = ? AND ts < ?", (ip, cutoff))
+        conn.execute("DELETE FROM hits WHERE ts < ?", (cutoff,))
         (n,) = conn.execute(
             "SELECT COUNT(*) FROM hits WHERE ip = ? AND ts >= ?", (ip, cutoff)
         ).fetchone()
