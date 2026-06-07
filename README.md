@@ -1,4 +1,4 @@
-# Oura Stress Extractor
+# Relax -- Oura Stress Data Extractor
 
 
 A small web app that turns a screenshot of Oura’s **Daytime Stress** screen into a table of `(timestamp, stress zone)` rows. Oura provides no API for this data, so the extractor reconstructs it directly from the screenshot using OpenCV and Tesseract OCR.

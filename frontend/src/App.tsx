@@ -399,12 +399,12 @@ export function App() {
 
       <header className="masthead">
         <div className="brand">
-          <span className="brand-tool">Oura Stress Data Extractor</span>
+          <span className="brand-tool">Relax -- Oura Stress Data Extractor</span>
           <ThemeToggle />
         </div>
         <h1>Extract Oura Daytime Stress data from a screenshot.</h1>
         <p className="subtitle">
-          Upload a Daytime Stress screenshot and get a clean, downloadable timeline. <br />
+          Upload a Daytime Stress screenshot and get a clean, downloadable timeline. <br /> <br />
           Screenshots are processed in memory and never stored.
         </p>
       </header>
