@@ -13,12 +13,18 @@
 	}
 }
 
-{$DOMAIN} {
+(no_tls) {
+	# Intentionally empty: local Docker runs on plain HTTP.
+}
+
+(tls_origin) {
+	tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin-key.pem
+}
+
+{$CADDY_SITE_ADDR:http://localhost} {
 	# Public, unauthenticated: anyone can try the tool. Abuse is handled by the
 	# per-IP rate limit, the in-flight cap, and Cloudflare in front — see README.
-
-    # Tell Caddy to use your Cloudflare Origin Certificates instead of Let's Encrypt
-    tls /etc/caddy/origin.pem /etc/caddy/origin-key.pem
+	import {$CADDY_TLS_SNIPPET:no_tls}
 
 	# Access log to stdout (captured by `docker compose logs caddy`) so abuse is
 	# visible and can feed fail2ban-style banning later.

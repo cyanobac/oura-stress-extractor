@@ -89,4 +89,5 @@ Caddy terminates TLS (auto Let's Encrypt) and reverse-proxies `/api/*` to the
 backend; only Caddy publishes ports. The site is public and unauthenticated —
 abuse is handled by the per-IP rate limit (`ratelimit.py`), the in-flight
 concurrency cap (`routes.py`), and Cloudflare in front (see README). Config via
-`.env` (just `DOMAIN`).
+`.env` (`CADDY_SITE_ADDR` + `CADDY_TLS_SNIPPET`; the domain lives in
+`CADDY_SITE_ADDR`).

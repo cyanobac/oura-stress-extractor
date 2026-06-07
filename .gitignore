@@ -17,6 +17,8 @@ dist/
 
 # Env / secrets
 .env
+# Cloudflare Origin cert/key, mounted into Caddy in production — never commit.
+certs/
 
 # OS
 .DS_Store

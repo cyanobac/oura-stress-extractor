@@ -58,7 +58,7 @@ other sizes are **rejected** rather than silently producing a wrong table. If yo
 capture on a different device, the constants in
 `backend/app/extractor/core.py` and `image_helpers.py` need re-tuning.
 
-## Develop locally
+## Develop Locally
 
 **Backend** (needs Tesseract installed locally, or just use Docker):
 
@@ -91,29 +91,45 @@ daystar CLI's known-good result for the bundled 2026-02-10 sample, so the copy
 can't silently drift. Tests run real OCR, so Tesseract must be installed
 (`TESSERACT_CMD` overrides the binary path).
 
-## Run with Docker (local)
+## Run with Docker Locally
 
 ```bash
 docker compose up --build
-# DOMAIN defaults to localhost → Caddy serves a self-signed cert at https://localhost
+# Caddy serves plain HTTP on http://localhost by default.
 ```
 
-## Deploy on Docker host
+If Chrome keeps upgrading `http://localhost` to `https://localhost`, clear
+`localhost` site data or open a fresh profile/incognito window. Chrome can cache
+an HTTPS-only policy for `localhost` after earlier HTTPS testing.
+
+## Deploy on Docker Host
 
 1. Point a DNS A record at the server.
-2. `cp .env.example .env` and set `DOMAIN`.
+2. `cp .env.example .env` and set `CADDY_SITE_ADDR` and `CADDY_TLS_SNIPPET`.
 3. `docker compose up -d --build`
 
-Caddy terminates TLS (auto Let's Encrypt), serves the static frontend, and
-reverse-proxies `/api/*` to the backend. The site is **public and
-unauthenticated** — abuse is handled by the per-IP rate limit, the in-flight
-cap, and Cloudflare (see below). Only ports 80/443 are exposed; the backend and
-frontend containers are internal. Caddy also sets
-security headers (HSTS, CSP, `nosniff`, frame denial), caps `/api` upload bodies at
-1 MB, and writes JSON access logs to stdout (`docker compose logs caddy`).
+Caddy terminates TLS, serves the static frontend, and reverse-proxies `/api/*`
+to the backend. The site is **public and unauthenticated** — abuse is handled by
+the per-IP rate limit, the in-flight cap, and Cloudflare (see below). Only
+ports 80/443 are exposed; the backend and frontend containers are internal.
+Caddy also sets security headers (HSTS, CSP, `nosniff`, frame denial), caps
+`/api` upload bodies at 1 MB, and writes JSON access logs to stdout (`docker
+compose logs caddy`).
 
 > The CSP pins the one inline `<script>` in `frontend/index.html` by SHA-256 hash.
 > If you change that snippet, regenerate the hash and update it in the `Caddyfile`.
+
+### TLS modes
+
+The compose stack supports both local and production TLS without committing any
+private certs:
+
+1. **Local default:** `CADDY_SITE_ADDR=http://localhost` and `CADDY_TLS_SNIPPET=no_tls`
+   make Caddy serve the stack over plain HTTP on localhost.
+2. **Production:** set `CADDY_SITE_ADDR=https://your-domain` and
+   `CADDY_TLS_SNIPPET=tls_origin`, then mount your Cloudflare Origin cert/key
+   into `./certs/origin.pem` and `./certs/origin-key.pem` (read-only) before
+   starting the stack.
 
 ## Public deployment behind Cloudflare
 
@@ -124,22 +140,12 @@ layer.
 
 1. **Add the domain to Cloudflare** and switch your registrar to Cloudflare's
    nameservers.
-2. **Proxy the DNS record** — an `A` record for `DOMAIN` → your server IP with
+2. **Proxy the DNS record** — an `A` record for your domain → your server IP with
    the **orange cloud** (proxied) on.
-3. **TLS.** Caddy's automatic Let's Encrypt challenge can fail while traffic is
-   proxied, so either:
-   - *Recommended:* create a **Cloudflare Origin Certificate** (Cloudflare
-     dashboard → SSL/TLS → Origin Server), set SSL/TLS mode to **Full
-     (strict)**, mount the cert/key into the Caddy container, and tell Caddy to
-     use them in the site block:
-     ```
-     tls /etc/caddy/origin.pem /etc/caddy/origin-key.pem
-     ```
-     (add a `./origin.pem:/etc/caddy/origin.pem:ro` style mount in
-     `docker-compose.yml`). The cert is valid for years, so there's no renewal.
-   - *Quick alternative:* leave the record **grey-clouded** until Caddy obtains a
-     Let's Encrypt cert, then flip it to orange. Note that proxied renewals can
-     later fail — the Origin Certificate avoids that.
+3. **TLS.** Use the production TLS mode above with a **Cloudflare Origin
+   Certificate** (Cloudflare dashboard → SSL/TLS → Origin Server) and set
+   SSL/TLS mode to **Full (strict)**. The origin cert is valid for years, so
+   there is no renewal burden.
 4. **Lock the origin to Cloudflare.** Restrict your Hetzner firewall so ports
    80/443 only accept Cloudflare's IP ranges
    (<https://www.cloudflare.com/ips/>); otherwise bots can hit the origin IP
