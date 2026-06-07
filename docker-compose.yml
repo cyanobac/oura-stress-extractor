@@ -31,6 +31,9 @@ services:
       DOMAIN: ${DOMAIN:-localhost}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # MOUNT THE CERTS HERE (Read-Only)
+      - ./certs/origin.pem:/etc/caddy/origin.pem:ro
+      - ./certs/origin-key.pem:/etc/caddy/origin-key.pem:ro
       - caddy_data:/data
       - caddy_config:/config
 
