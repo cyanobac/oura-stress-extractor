@@ -5,10 +5,13 @@ __pycache__/
 venv/
 debug_ocr_*.png
 
-# Local rate-limit SQLite DB (dev default when RATE_LIMIT_DB is unset)
+# Local SQLite DBs (dev defaults when RATE_LIMIT_DB / REQUEST_LOG_DB are unset)
 ratelimit.db
 ratelimit.db-wal
 ratelimit.db-shm
+requests.db
+requests.db-wal
+requests.db-shm
 
 # Node / Vite
 node_modules/

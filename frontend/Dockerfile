@@ -4,6 +4,11 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install
 COPY . .
+# Contact address for the footer mailto link. Vite bakes VITE_* vars into the
+# static bundle at build time, so this must be present before `npm run build`.
+# Left empty by default, which hides the link (no address ships in source).
+ARG VITE_CONTACT_EMAIL=""
+ENV VITE_CONTACT_EMAIL=$VITE_CONTACT_EMAIL
 RUN npm run build
 
 FROM nginx:alpine

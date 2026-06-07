@@ -3,6 +3,7 @@ import asyncio
 import base64
 import logging
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -10,7 +11,7 @@ import cv2
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 
-from . import ratelimit
+from . import ratelimit, requestlog
 from .extractor.core import (
     ExtractionError,
     decode_image,
@@ -85,77 +86,102 @@ async def extract(
         date:           the day the chart represents, YYYY-MM-DD.
         include_image:  if true, return the annotated chart as a base64 PNG.
     """
-    try:
-        reference_date = datetime.strptime(date, "%Y-%m-%d").date()
-    except ValueError:
-        raise HTTPException(status_code=422, detail="date must be YYYY-MM-DD")
-
-    raw = await file.read()
-    if not raw:
-        raise HTTPException(status_code=422, detail="Empty upload")
-    if len(raw) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="Image too large (max 1 MB)")
-
-    # Per-IP daily quota. Caddy is the only thing that reaches the backend, and it
-    # sets X-Real-IP from the verified client IP, so we trust that header here.
+    start = time.monotonic()
+    # Caddy is the only thing that reaches the backend, and it sets X-Real-IP from
+    # the verified client IP, so we trust that header here (used for the per-IP
+    # quota and the hashed request log).
     ip = request.headers.get("X-Real-IP") or (
         request.client.host if request.client else "unknown"
     )
-    if ratelimit.enabled():
-        used = await run_in_threadpool(ratelimit.count_recent, ip)
-        if used >= ratelimit.max_hits():
-            retry = await run_in_threadpool(ratelimit.seconds_until_reset, ip)
-            raise HTTPException(
-                status_code=429,
-                detail=(
-                    f"Daily limit of {ratelimit.max_hits()} extractions reached "
-                    f"for your IP. Run it locally instead — "
-                    f"https://github.com/cyanobac/oura-stress-extractor — or try "
-                    f"again tomorrow."
-                ),
-                headers={"Retry-After": str(retry)},
-            )
 
-    # Shed load before committing memory: if the running+waiting count is already
-    # at the limit, reject fast instead of growing the queue. (Atomic in asyncio:
-    # no `await` between the check and the increment.)
-    global _inflight
-    if _inflight >= _MAX_INFLIGHT:
-        raise HTTPException(
-            status_code=503,
-            detail="Server busy, please try again in a minute.",
-            headers={"Retry-After": "60"},
-        )
-    _inflight += 1
+    async def _log(status: int, error: str | None = None) -> None:
+        """Record this request's outcome. Never lets a logging failure break the
+        request path — the durable log is best-effort."""
+        if not requestlog.enabled():
+            return
+        ms = int((time.monotonic() - start) * 1000)
+        try:
+            await run_in_threadpool(requestlog.log, ip, ms, status, error)
+        except Exception:  # noqa: BLE001 - logging must never break the request
+            logger.exception("Request logging failed")
+
     try:
-        # Run the heavy, blocking OCR pipeline in a worker thread so it doesn't
-        # freeze the event loop, and gate concurrency so a flood can't exhaust CPU.
-        async with _extract_semaphore:
-            try:
-                result = await asyncio.wait_for(
-                    run_in_threadpool(
-                        _run_pipeline, raw, reference_date, include_image
+        try:
+            reference_date = datetime.strptime(date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=422, detail="date must be YYYY-MM-DD")
+
+        raw = await file.read()
+        if not raw:
+            raise HTTPException(status_code=422, detail="Empty upload")
+        if len(raw) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="Image too large (max 1 MB)")
+
+        # Per-IP daily quota.
+        if ratelimit.enabled():
+            used = await run_in_threadpool(ratelimit.count_recent, ip)
+            if used >= ratelimit.max_hits():
+                retry = await run_in_threadpool(ratelimit.seconds_until_reset, ip)
+                raise HTTPException(
+                    status_code=429,
+                    detail=(
+                        f"Daily limit of {ratelimit.max_hits()} extractions reached "
+                        f"for your IP. Run it locally instead — "
+                        f"https://github.com/cyanobac/oura-stress-extractor — or try "
+                        f"again tomorrow."
                     ),
-                    timeout=_EXTRACT_TIMEOUT,
-                )
-            except asyncio.TimeoutError:
-                logger.warning("Extraction timed out after %ss", _EXTRACT_TIMEOUT)
-                raise HTTPException(
-                    status_code=504, detail="Extraction timed out. Please try again."
-                )
-            except ExtractionError as e:
-                # Expected, user-facing problems (bad size, undecodable, no dots).
-                raise HTTPException(status_code=422, detail=str(e))
-            except Exception:  # noqa: BLE001 - surface anything unexpected as 500
-                # Log full detail server-side; never leak internals to the client.
-                logger.exception("Extraction failed")
-                raise HTTPException(
-                    status_code=500, detail="Extraction failed. Please try again."
+                    headers={"Retry-After": str(retry)},
                 )
 
-        # Only successful extractions count against the daily quota.
-        if ratelimit.enabled():
-            await run_in_threadpool(ratelimit.record, ip)
+        # Shed load before committing memory: if the running+waiting count is
+        # already at the limit, reject fast instead of growing the queue. (Atomic
+        # in asyncio: no `await` between the check and the increment.)
+        global _inflight
+        if _inflight >= _MAX_INFLIGHT:
+            raise HTTPException(
+                status_code=503,
+                detail="Server busy, please try again in a minute.",
+                headers={"Retry-After": "60"},
+            )
+        _inflight += 1
+        try:
+            # Run the heavy, blocking OCR pipeline in a worker thread so it doesn't
+            # freeze the event loop, and gate concurrency so a flood can't exhaust
+            # CPU.
+            async with _extract_semaphore:
+                try:
+                    result = await asyncio.wait_for(
+                        run_in_threadpool(
+                            _run_pipeline, raw, reference_date, include_image
+                        ),
+                        timeout=_EXTRACT_TIMEOUT,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning("Extraction timed out after %ss", _EXTRACT_TIMEOUT)
+                    raise HTTPException(
+                        status_code=504,
+                        detail="Extraction timed out. Please try again.",
+                    )
+                except ExtractionError as e:
+                    # Expected, user-facing problems (bad size, undecodable, no dots).
+                    raise HTTPException(status_code=422, detail=str(e))
+                except Exception:  # noqa: BLE001 - surface anything unexpected as 500
+                    # Log full detail server-side; never leak internals to client.
+                    logger.exception("Extraction failed")
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Extraction failed. Please try again.",
+                    )
+
+            # Only successful extractions count against the daily quota.
+            if ratelimit.enabled():
+                await run_in_threadpool(ratelimit.record, ip)
+        finally:
+            _inflight -= 1
+
+        await _log(200)
         return result
-    finally:
-        _inflight -= 1
+    except HTTPException as e:
+        detail = e.detail if isinstance(e.detail, str) else None
+        await _log(e.status_code, detail)
+        raise

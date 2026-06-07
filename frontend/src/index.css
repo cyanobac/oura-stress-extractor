@@ -332,6 +332,13 @@ h1 {
   font-size: 12.5px; color: var(--text-mut); font-weight: 500;
 }
 .legend-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--zc); }
+.legend-total {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11.5px; color: var(--text-dim); font-weight: 500;
+}
+
+/* ---- copy bar ---- */
+.copy-bar { display: flex; gap: 8px; margin-bottom: 12px; }
 
 /* ---- table ---- */
 .table-wrap {
@@ -380,3 +387,11 @@ h1 {
   .form-top { flex-direction: column; }
   .results-header { flex-direction: column; align-items: flex-start; }
 }
+
+/* ---- footer ---- */
+.site-footer { margin-top: 48px; text-align: center; }
+.site-footer a {
+  color: var(--text-dim); font-size: 13px; text-decoration: none;
+  border-bottom: 1px solid transparent; transition: color 0.15s, border-color 0.15s;
+}
+.site-footer a:hover { color: var(--text-mut); border-bottom-color: var(--border); }

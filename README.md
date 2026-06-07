@@ -105,8 +105,14 @@ an HTTPS-only policy for `localhost` after earlier HTTPS testing.
 ## Deploy on Docker Host
 
 1. Point a DNS A record at the server.
-2. `cp .env.example .env` and set `CADDY_SITE_ADDR` and `CADDY_TLS_SNIPPET`.
+2. `cp .env.example .env` and set `CADDY_SITE_ADDR` and `CADDY_TLS_SNIPPET`. Also
+   set `REQUEST_LOG_SALT` (see [Request log](#request-log)) and, optionally,
+   `CONTACT_EMAIL` for the footer "Contact" link.
 3. `docker compose up -d --build`
+
+`CONTACT_EMAIL` is baked into the frontend bundle at build time (it becomes the
+`VITE_CONTACT_EMAIL` build arg), so changing it requires a `--build`. Leave it
+empty to hide the link entirely — no address ships in the source either way.
 
 Caddy terminates TLS, serves the static frontend, and reverse-proxies `/api/*`
 to the backend. The site is **public and unauthenticated** — abuse is handled by
@@ -199,6 +205,58 @@ Env vars tune the throttle (defaults in parentheses):
 Only **successful** (200) extractions count against `RATE_LIMIT_MAX`; the count
 is keyed on the client IP (from the `X-Real-IP` header Caddy sets) and persists
 in SQLite, so it survives restarts and redeploys.
+
+## Request log
+
+Every request — served *or* rejected — is appended to a durable SQLite log
+(separate from the rate-limit DB, which prunes itself). Each row is:
+
+| column          | meaning                                            |
+| --------------- | -------------------------------------------------- |
+| `ts`            | ISO8601 UTC timestamp                              |
+| `ip_hash`       | `SHA256(REQUEST_LOG_SALT + client_ip)` — no raw IP |
+| `processing_ms` | wall-clock time to handle the request              |
+| `status`        | HTTP status returned                                |
+| `success`       | `1` if `status < 400`, else `0`                     |
+| `error`         | failure detail (nullable)                          |
+
+Raw IPs are never stored; they're hashed with a server-side salt so repeat
+visitors can be correlated without keeping PII.
+
+| var                | meaning                                                       |
+| ------------------ | ------------------------------------------------------------- |
+| `REQUEST_LOG`      | `0` disables logging entirely (on by default)                 |
+| `REQUEST_LOG_DB`   | SQLite path for the log (`/data/requests.db` in Docker)       |
+| `REQUEST_LOG_SALT` | salt for hashing IPs — **keep constant across restarts**, or repeat-visitor correlation breaks; never commit the real value |
+
+Generate a salt once and put it in `.env`:
+
+```bash
+python -c "import secrets; print(secrets.token_hex(16))"
+```
+
+### Reading the log
+
+There is **no admin HTTP endpoint** (the service has no auth by design). Inspect
+the log out-of-band with the read-only dump CLI, which emits CSV (newest first):
+
+```bash
+python -m app.logdump                 # CSV to stdout
+python -m app.logdump --limit 100     # only the 100 most recent rows
+python -m app.logdump --out log.csv   # write to a file
+```
+
+Under Docker the log lives in the `ratelimit_data` volume *inside the backend
+container* (`/data/requests.db`), so run the dump there and copy the file out:
+
+```bash
+docker compose exec backend python -m app.logdump --out /data/dump.csv
+docker compose cp backend:/data/dump.csv ./dump.csv
+```
+
+(Running `python -m app.logdump` on the host instead reads the host default path
+`backend/app/requests.db`, a different file — that's the dev/local DB, not the
+container's.)
 
 ## License
 

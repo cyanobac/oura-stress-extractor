@@ -218,16 +218,11 @@ def extract_from_array(screenshot, mask_path, reference_date, debug_ocr=False):
         for g in gaps_raw
     ]
 
-    if first_time < points[0]["timestamp"]:
-        warnings.append(
-            f"Possible missing data at start (chart begins {first_time:%H:%M}, "
-            f"first dot at {points[0]['timestamp']:%H:%M})."
-        )
-    if last_time > points[-1]["timestamp"]:
-        warnings.append(
-            f"Possible missing data at end (last dot {points[-1]['timestamp']:%H:%M}, "
-            f"chart ends {last_time:%H:%M})."
-        )
+    # NB: we intentionally do *not* warn when the first/last dot sits inside the
+    # chart's time axis. Oura's chart spans a fixed axis range but only plots
+    # dots where it has data, so leading/trailing empty space is normal framing,
+    # not missing data — flagging it was just noise. Real anomalies (duplicate
+    # timestamps above, and interior gaps below) are still surfaced.
 
     annotated = create_visualization(screenshot, filtered, df.assign(
         timestamp=[p["timestamp"] for p in points]))

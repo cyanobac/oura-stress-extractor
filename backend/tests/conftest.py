@@ -21,6 +21,13 @@ def isolated_ratelimit_db(tmp_path, monkeypatch):
     monkeypatch.setenv("RATE_LIMIT_DB", str(tmp_path / "ratelimit.db"))
 
 
+@pytest.fixture(autouse=True)
+def isolated_request_log_db(tmp_path, monkeypatch):
+    """Point the request log at a fresh per-test SQLite file so tests don't
+    write to the real default DB."""
+    monkeypatch.setenv("REQUEST_LOG_DB", str(tmp_path / "requests.db"))
+
+
 @pytest.fixture
 def sample_png_bytes() -> bytes:
     return (FIXTURES / f"stress_chart_{SAMPLE_DATE}.png").read_bytes()

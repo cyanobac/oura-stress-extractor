@@ -9,16 +9,46 @@ function hhmm(iso: string): string {
   return t.slice(0, 5);
 }
 
+function ymd(iso: string): string {
+  return iso.split("T")[0] ?? iso;
+}
+
 function fmtSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+// Each detected dot is one 15-minute sample, so a zone's total time is just its
+// sample count × 15 minutes.
+const SAMPLE_MINUTES = 15;
+
+function zoneMinutes(points: StressPoint[]): Record<string, number> {
+  const mins: Record<string, number> = {};
+  for (const p of points) mins[p.zone] = (mins[p.zone] ?? 0) + SAMPLE_MINUTES;
+  return mins;
+}
+
+function fmtMinutes(min: number): string {
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
 function toCsv(result: ExtractResult): string {
   const rows = ["timestamp,zone"];
   for (const p of result.points) rows.push(`${p.timestamp},${p.zone}`);
   return rows.join("\n");
+}
+
+function toMarkdown(result: ExtractResult): string {
+  const lines = ["| Date | Time | Zone |", "| --- | --- | --- |"];
+  for (const p of result.points) {
+    const zone = ZONES[p.zone]?.label ?? p.zone;
+    lines.push(`| ${ymd(p.timestamp)} | ${hhmm(p.timestamp)} | ${zone} |`);
+  }
+  return lines.join("\n");
 }
 
 function downloadCsv(result: ExtractResult, date: string) {
@@ -236,6 +266,7 @@ function ResultsTable({ points }: { points: StressPoint[] }) {
       <table className="data-table">
         <thead>
           <tr>
+            <th>Date</th>
             <th>Time</th>
             <th>Zone</th>
           </tr>
@@ -243,6 +274,7 @@ function ResultsTable({ points }: { points: StressPoint[] }) {
         <tbody>
           {points.map((p, i) => (
             <tr key={i}>
+              <td className="t-time">{ymd(p.timestamp)}</td>
               <td className="t-time">{hhmm(p.timestamp)}</td>
               <td>
                 <ZoneTag zone={p.zone} />
@@ -255,13 +287,41 @@ function ResultsTable({ points }: { points: StressPoint[] }) {
   );
 }
 
-function ZoneLegend() {
+function CopyButtons({ result }: { result: ExtractResult }) {
+  const [copied, setCopied] = useState<"csv" | "md" | null>(null);
+
+  const copy = async (kind: "csv" | "md") => {
+    const text = kind === "csv" ? toCsv(result) : toMarkdown(result);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(kind);
+      setTimeout(() => setCopied((c) => (c === kind ? null : c)), 1500);
+    } catch {
+      /* clipboard unavailable (e.g. insecure context) — non-fatal */
+    }
+  };
+
+  return (
+    <div className="copy-bar">
+      <button type="button" className="ghost-btn" onClick={() => copy("csv")}>
+        {copied === "csv" ? "Copied!" : "Copy CSV"}
+      </button>
+      <button type="button" className="ghost-btn" onClick={() => copy("md")}>
+        {copied === "md" ? "Copied!" : "Copy Markdown"}
+      </button>
+    </div>
+  );
+}
+
+function ZoneLegend({ points }: { points: StressPoint[] }) {
+  const mins = zoneMinutes(points);
   return (
     <div className="legend">
       {ZONE_ORDER.map((z) => (
         <span key={z} className="legend-item" style={{ "--zc": ZONES[z].color } as React.CSSProperties}>
           <span className="legend-dot" />
           {ZONES[z].label}
+          <span className="legend-total">{fmtMinutes(mins[z] ?? 0)}</span>
         </span>
       ))}
     </div>
@@ -328,6 +388,10 @@ export function App() {
 
   const firstT = result ? hhmm(result.meta.first_time) : "";
   const lastT = result ? hhmm(result.meta.last_time) : "";
+
+  // Injected at build time (VITE_CONTACT_EMAIL); the link is hidden when unset so
+  // no address ever ships in source. A mailto is inherently public anyway.
+  const contactEmail = import.meta.env.VITE_CONTACT_EMAIL;
 
   return (
     <div className="page">
@@ -438,7 +502,8 @@ export function App() {
             />
           )}
 
-          <ZoneLegend />
+          <ZoneLegend points={result.points} />
+          <CopyButtons result={result} />
           <ResultsTable points={result.points} />
 
           {result.warnings.length > 0 && (
@@ -452,6 +517,12 @@ export function App() {
             </ul>
           )}
         </section>
+      )}
+
+      {contactEmail && (
+        <footer className="site-footer">
+          <a href={`mailto:${contactEmail}`}>Contact</a>
+        </footer>
       )}
     </div>
   );

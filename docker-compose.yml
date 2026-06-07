@@ -8,6 +8,11 @@ services:
     environment:
       # Persist the per-IP rate-limit counter so the daily limit survives restarts.
       RATE_LIMIT_DB: /data/ratelimit.db
+      # Durable request log (timestamp, hashed IP, processing time, outcome).
+      # REQUEST_LOG_SALT must stay constant across restarts for repeat-visitor
+      # correlation to hold; set it in .env (see .env.example).
+      REQUEST_LOG_DB: /data/requests.db
+      REQUEST_LOG_SALT: ${REQUEST_LOG_SALT:-}
     volumes:
       - ratelimit_data:/data
     # Defense-in-depth: no extra privileges, no Linux capabilities (uvicorn binds
@@ -25,7 +30,11 @@ services:
       start_period: 20s
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        # Baked into the static bundle at build time; empty hides the footer link.
+        VITE_CONTACT_EMAIL: ${CONTACT_EMAIL:-}
     restart: unless-stopped
     expose:
       - "80"

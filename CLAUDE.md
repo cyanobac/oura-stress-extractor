@@ -91,3 +91,15 @@ abuse is handled by the per-IP rate limit (`ratelimit.py`), the in-flight
 concurrency cap (`routes.py`), and Cloudflare in front (see README). Config via
 `.env` (`CADDY_SITE_ADDR` + `CADDY_TLS_SNIPPET`; the domain lives in
 `CADDY_SITE_ADDR`).
+
+Every request is logged to SQLite by `requestlog.py` (separate DB from the
+rate-limiter, which prunes aggressively — the log is durable): timestamp, hashed
+IP, processing time, and outcome status, for *all* requests including
+rejections. Raw IPs are never stored — they're SHA-256'd with `REQUEST_LOG_SALT`,
+which **must stay constant across restarts** or repeat-visitor correlation
+breaks. There is deliberately no admin HTTP endpoint (the box has no auth);
+inspect the log out-of-band with the read-only CLI: `python -m app.logdump`
+(CSV to stdout, `--limit N`, `--out file`). Disable logging with
+`REQUEST_LOG=0`. The footer "Contact" mailto is `CONTACT_EMAIL` in `.env`, baked
+into the frontend bundle at build time (Vite build arg → `VITE_CONTACT_EMAIL`);
+empty hides the link so no address ships in source.
