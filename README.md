@@ -69,6 +69,8 @@ uvicorn app.main:app --reload --port 8000
 
 **Frontend** (proxies `/api` → `127.0.0.1:8000`):
 
+Requires Node.js v20.19+ or v22.12+. If your system Node is older, use [nvm](https://github.com/nvm-sh/nvm): `nvm install 22 && nvm use 22`.
+
 ```bash
 cd frontend
 npm install
