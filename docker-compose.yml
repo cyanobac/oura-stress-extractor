@@ -5,6 +5,14 @@ services:
     expose:
       - "8000"
     # No published ports: only Caddy talks to it.
+    # Hard memory ceiling so a runaway/leaky OCR job gets the container OOM-killed
+    # (and restarted, per restart: unless-stopped) instead of letting the host's
+    # OOM-killer roam and possibly take down Caddy or sshd. Concurrency is already
+    # bounded in routes.py (MAX_CONCURRENT_EXTRACTIONS); this is the safety net.
+    deploy:
+      resources:
+        limits:
+          memory: 2.5G
     environment:
       # Persist the per-IP rate-limit counter so the daily limit survives restarts.
       RATE_LIMIT_DB: /data/ratelimit.db
