@@ -62,14 +62,16 @@ and `image_helpers.py` need re-tuning.
 
 ```bash
 cd backend
-python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
 **Frontend** (proxies `/api` → `127.0.0.1:8000`):
 
-Requires Node.js v20.19+ or v22.12+. If your system Node is older, use [nvm](https://github.com/nvm-sh/nvm): `nvm install 22 && nvm use 22`.
+Requires Node.js v20.19+ or v22.12+. If your system Node is older, 
+use [nvm](https://github.com/nvm-sh/nvm): `nvm install 22 && nvm use 22`.
 
 ```bash
 cd frontend
@@ -82,7 +84,7 @@ npm run dev          # http://localhost:5173
 ```bash
 cd backend
 python -m venv .venv
-source .venv/Scripts/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
 pytest
 ```
@@ -111,6 +113,11 @@ an HTTPS-only policy for `localhost` after earlier HTTPS testing.
    `CONTACT_EMAIL` for the footer "Contact" link.
 3. `docker compose up -d --build`
 
+> **Upgrading from a version where the containers ran as root?** The existing
+> data volume is owned by root, so the now-unprivileged backend can't write its
+> SQLite databases (every extraction will 500). Fix the ownership once:
+> `docker compose run --rm --user root backend chown -R 1000:1000 /data`
+
 `CONTACT_EMAIL` is baked into the frontend bundle at build time (it becomes the
 `VITE_CONTACT_EMAIL` build arg), so changing it requires a `--build`. Leave it
 empty to hide the link entirely — no address ships in the source either way.
@@ -121,7 +128,9 @@ the per-IP rate limit, the in-flight cap, and Cloudflare (see below). Only
 ports 80/443 are exposed; the backend and frontend containers are internal.
 Caddy also sets security headers (HSTS, CSP, `nosniff`, frame denial), caps
 `/api` upload bodies at 1 MB, and writes JSON access logs to stdout (`docker
-compose logs caddy`).
+compose logs caddy`). All three containers run with all Linux capabilities
+dropped, and the backend and frontend run as non-root users — an exploit
+against the image parsers (OpenCV/Tesseract) lands in an unprivileged process.
 
 > The CSP pins the one inline `<script>` in `frontend/index.html` by SHA-256 hash.
 > If you change that snippet, regenerate the hash and update it in the `Caddyfile`.

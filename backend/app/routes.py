@@ -111,7 +111,7 @@ async def extract(
         except ValueError:
             raise HTTPException(status_code=422, detail="date must be YYYY-MM-DD")
 
-        raw = await file.read()
+        raw = await file.read(MAX_UPLOAD_BYTES + 1)
         if not raw:
             raise HTTPException(status_code=422, detail="Empty upload")
         if len(raw) > MAX_UPLOAD_BYTES:

@@ -14,7 +14,16 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Create a non-root user and group
+RUN addgroup --system --gid 1000 appgroup && \
+    adduser --system --uid 1000 --gid 1000 --home /app --no-create-home appuser
+
+# Set up data directory for SQLite with correct permissions so volume mounts inherit them
+RUN mkdir -p /data && chown appuser:appgroup /data
+
 COPY app ./app
+
+USER appuser
 
 EXPOSE 8000
 
