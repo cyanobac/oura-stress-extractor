@@ -127,7 +127,7 @@ async def extract(
                     detail=(
                         f"Daily limit of {ratelimit.max_hits()} extractions reached "
                         f"for your IP. Run it locally instead — "
-                        f"https://github.com/cyanobac/oura-stress-extractor — or try "
+                        f"https://github.com/cyanobac/relax — or try "
                         f"again tomorrow."
                     ),
                     headers={"Retry-After": str(retry)},

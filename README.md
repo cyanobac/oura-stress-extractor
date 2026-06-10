@@ -81,7 +81,8 @@ npm run dev          # http://localhost:5173
 
 ```bash
 cd backend
-python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
+python -m venv .venv
+source .venv/Scripts/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
 pytest
 ```

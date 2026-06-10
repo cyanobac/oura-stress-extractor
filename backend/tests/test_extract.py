@@ -185,4 +185,4 @@ def test_extract_endpoint_enforces_daily_limit(sample_png_bytes):
     )
     assert r.status_code == 429
     assert int(r.headers["Retry-After"]) > 0
-    assert "github.com/cyanobac/oura-stress-extractor" in r.json()["detail"]
+    assert "github.com/cyanobac/relax" in r.json()["detail"]
