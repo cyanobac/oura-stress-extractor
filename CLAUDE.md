@@ -29,7 +29,7 @@ npm run dev        # http://localhost:5173
 npm run build      # tsc -b && vite build
 ```
 
-Docker (full stack, Caddy on :443 with a self-signed cert at https://localhost):
+Docker (full stack, Caddy on :80 serving plain HTTP at http://localhost):
 
 ```bash
 docker compose up --build
